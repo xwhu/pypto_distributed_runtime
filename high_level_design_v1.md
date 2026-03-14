@@ -182,38 +182,6 @@ Key telemetry:
 
 ---
 
-
-## 4.9 Lower-Level Runtime Interaction (Control/Data Plane Contract)
-
-To ensure smooth interaction with lower-level runtimes/drivers (including Linqu runtime style integrations), PyPTO v1 should define a strict boundary contract rather than assuming direct kernel-level control.
-
-### Control-plane contract
-
-- **Lifecycle APIs:** `init_device`, `load_artifact`, `create_session`, `destroy_session`.
-- **Execution APIs:** `enqueue(op_or_subgraph, inputs, attrs, stream_id)` + completion events.
-- **Resource APIs:** query capabilities (op support, precision, memory limits, stream count).
-- **Health APIs:** heartbeat, error classification, degraded-mode signals.
-
-### Data-plane contract
-
-- Common tensor descriptor (`shape`, `dtype`, `layout`, `strides`, `device`, `memory_kind`).
-- Explicit ownership semantics (who allocates/frees, borrow vs transfer).
-- Transfer primitives (`host<->npu`, `npu<->npu`) with async event handles.
-- Optional zero-copy / shared-memory pathways behind capability flags.
-
-### Compatibility and versioning
-
-- Runtime contract versioning (`major.minor`) with feature negotiation at startup.
-- Capability bitset for optional features (quantization modes, graph execution, fused ops).
-- Backward-compatible fallback path when capability is missing.
-
-### Error model alignment
-
-- Canonical error classes: `RETRYABLE`, `FALLBACKABLE`, `FATAL`, `RESOURCE_EXHAUSTED`, `UNSUPPORTED`.
-- Lower-level error normalization into canonical classes before scheduler action.
-
-This contract-first approach allows PyPTO to integrate heterogeneous lower-level stacks consistently while keeping upper-layer scheduling logic portable.
-
 ## 5. Execution Model
 
 ## 5.1 Plan Lifecycle
@@ -319,12 +287,10 @@ Design preference in v1: preserve service continuity over peak efficiency.
 - CPU/NPU worker abstraction
 - Simple partitioner + rule-based placement
 - Basic distributed scheduler and queueing
-- Lower-level runtime adapter interface (v1 control/data plane contract)
 
 ## Phase 2: Production Baselines
 
 - Transfer/memory manager
-- Capability negotiation + error normalization with lower-level runtime
 - Fallback/retry policy engine
 - Metrics/tracing and dashboards
 - Dynamic batching (LLM + ranking focus)
@@ -344,7 +310,6 @@ Design preference in v1: preserve service continuity over peak efficiency.
 3. How much user placement control should be exposed vs hidden?
 4. Is interoperability with existing frameworks required at v1 (e.g., PyTorch graph import)?
 5. What consistency guarantees are needed for stateful workloads (e.g., KV cache, replay buffers)?
-6. Which lower-level runtime ABI should be treated as the reference adapter contract in v1?
 
 ---
 
@@ -357,26 +322,3 @@ If only one path can be prioritized, start with:
 - and reusable primitives (partition, async execution, transfer, fallback, telemetry).
 
 This offers immediate practical value and establishes the architectural base for RL and continuous learning expansion.
-
-
----
-
-## 14. Proposed Adapter Interface Sketch (for Lower-Level Integration)
-
-```text
-interface LowerRuntimeAdapter {
-  Capabilities get_capabilities();
-  Session create_session(ModelArtifact artifact, SessionConfig cfg);
-  Event enqueue(Session session, ExecutableUnit unit, TensorRef[] inputs, AttrMap attrs, StreamId stream);
-  Status poll(Event event);
-  TensorRef materialize(Event event, OutputIndex idx);
-  void release(TensorRef tensor);
-  void destroy_session(Session session);
-}
-```
-
-Notes:
-
-- `ExecutableUnit` can be either single op or pre-partitioned subgraph.
-- Event-driven polling/callback avoids global synchronization.
-- Adapter hides backend-specific APIs while exposing capabilities for planner/scheduler decisions.
